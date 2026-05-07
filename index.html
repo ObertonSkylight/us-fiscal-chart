@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>US Government Finances 1999–2026</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0f1117; color: #e8e8e8;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; padding: 24px 16px;
+  }
+  h1 { font-size:15px; font-weight:400; letter-spacing:.08em; text-transform:uppercase; color:#888; margin-bottom:4px; text-align:center; }
+  .year-display { font-weight:700; color:#f0f0f0; line-height:1; margin:4px 0 2px; letter-spacing:-2px; }
+  .sub-row { display:flex; gap:20px; align-items:center; justify-content:center; min-height:20px; margin-bottom:10px; }
+  .est-note { font-size:12px; color:#666; }
+  .cpi-badge { font-size:12px; color:#aaa; background:#1c1f2a; border-radius:4px; padding:2px 8px; }
+  canvas { display:block; max-width:100%; }
+  .legend { display:flex; flex-wrap:wrap; justify-content:center; gap:0; max-width:720px; margin-top:14px; }
+  .li { display:flex; align-items:center; gap:5px; font-size:11px; color:#888; margin:3px 8px; }
+  .ld { width:11px; height:11px; border-radius:2px; flex-shrink:0; }
+  .controls { display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:center; margin-top:18px; }
+  button { background:#1e2130; color:#ccc; border:1px solid #333; border-radius:6px; padding:7px 22px; font-size:13px; cursor:pointer; transition:background .15s; }
+  button:hover { background:#252840; }
+  .ctrl-group { display:flex; align-items:center; gap:8px; font-size:12px; color:#666; }
+  input[type=range] { accent-color:#4466DD; cursor:pointer; }
+  .source-note { font-size:10px; color:#444; text-align:center; margin-top:18px; max-width:700px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<h1>United States Government Finances</h1>
+<div class="year-display" id="yearDisplay">1999</div>
+<div class="sub-row">
+  <div class="est-note" id="estNote"></div>
+  <div class="cpi-badge" id="cpiBadge">CPI 166.6</div>
+</div>
+
+<canvas id="c" width="720" height="460"></canvas>
+<div class="legend" id="legendRow"></div>
+
+<div class="controls">
+  <button id="btnPlay">&#9646;&#9646; Pause</button>
+  <div class="ctrl-group">
+    <label>Year</label>
+    <input type="range" min="0" max="27" step="1" value="0" id="slYear" style="width:220px">
+  </div>
+  <div class="ctrl-group">
+    <label>Speed</label>
+    <input type="range" min="0.2" max="3" step="0.1" value="1" id="slSpeed" style="width:80px">
+  </div>
+</div>
+
+<p class="source-note">
+  Sources: BEA NIPA, OMB Historical Tables 1.1, 2.1 &amp; 3.1, US Treasury, Census Bureau ASFIN, BLS CPI-U (1982–84=100).
+  National debt = federal debt held by public. Year label size grows with the Consumer Price Index.
+  Secondary axis = 4× primary. &nbsp;* = CBO/OMB estimate or projection.
+</p>
+
+<script>
+const YEARS=[1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026];
+const EST=2025, N=YEARS.length;
+
+// CPI-U annual averages (BLS, base 1982-84=100)
+const CPI=[166.6,172.2,177.1,179.9,184.0,188.9,195.3,201.6,207.3,215.3,214.5,218.1,224.9,229.6,233.0,236.7,237.0,240.0,245.1,251.1,255.7,258.8,270.9,292.7,304.7,314.2,323.0,330.0];
+const CPI_BASE=CPI[0];
+
+const incIndividual=[879,1004,994,858,794,809,927,1044,1163,1146,915,899,1091,1132,1316,1395,1541,1546,1587,1684,1718,1609,2045,2632,2177,2427,2530,2590];
+const incPayroll   =[612,653,694,700,713,733,794,837,870,900,891,865,819,845,857,1024,1065,1115,1162,1171,1243,1310,1309,1484,1606,1716,1830,1890];
+const incCorporate =[185,207,151,148,132,189,278,354,370,304,138,191,181,242,274,321,344,300,297,205,230,212,402,425,420,529,500,510];
+const incStateTax  =[880,970,990,930,930,990,1060,1120,1180,1190,1060,1090,1170,1240,1290,1370,1430,1470,1580,1710,1790,1740,2010,2230,2390,2480,2560,2640];
+const incNonTaxFed =[180,188,182,188,194,208,224,256,258,268,272,290,302,324,342,362,350,368,380,412,420,368,390,460,430,450,465,472];
+const incNonTaxState=[220,240,250,260,270,280,300,320,340,360,370,380,400,420,440,460,480,500,520,550,570,580,620,680,720,760,790,820];
+const expSocSec    =[390,409,433,455,472,495,523,549,585,612,678,701,725,762,808,851,885,916,944,987,1038,1096,1145,1222,1354,1468,1540,1620];
+const expHealth    =[358,392,427,462,511,556,607,650,693,730,791,855,886,909,941,1000,1059,1119,1177,1240,1291,1439,1597,1756,1873,1984,2100,2220];
+const expMilitary  =[275,295,305,349,405,456,495,521,553,612,662,693,706,686,619,605,591,584,590,623,676,738,754,752,858,872,920,950];
+const expInterest  =[353,362,206,171,153,160,184,227,237,253,187,196,230,220,221,229,223,240,263,325,375,345,352,476,660,892,960,1020];
+const expStateOther=[972,1065,1107,1145,1178,1274,1337,1449,1509,1518,1492,1499,1544,1548,1571,1639,1715,1804,1880,1960,2044,2140,2095,2514,2536,2666,2780,2910];
+const expFedOther  =[326,331,498,574,620,626,663,708,661,776,1200,1012,1056,900,686,821,930,995,1008,934,1067,3933,3923,2066,1388,1534,1480,1510];
+const natDebt=[3633,3410,3320,3540,3914,4296,4592,4829,5035,5803,7545,9019,10128,11281,11982,12779,13117,14168,14665,15750,16801,21001,22284,24253,26232,27700,29100,30500];
+const GDP    =[9661,10252,10582,10936,11458,12214,13037,13815,14452,14713,14449,14992,15543,16197,16785,17527,18225,18715,19519,20611,21433,21060,23315,25744,27360,29180,30400,31700];
+
+const INCOME_STACKS=[
+  {label:'Individual income tax', col:'#1B6DB5', data:incIndividual},
+  {label:'Payroll / FICA',        col:'#2E9E7A', data:incPayroll},
+  {label:'Corporate tax',         col:'#BA7517', data:incCorporate},
+  {label:'State & local tax',     col:'#7C5CBF', data:incStateTax},
+  {label:'Federal non-tax income',col:'#5BA0C8', data:incNonTaxFed},
+  {label:'State non-tax income',  col:'#A0C878', data:incNonTaxState},
+];
+const EXP_STACKS=[
+  {label:'Social Security',        col:'#C0392B', data:expSocSec},
+  {label:'Health (Medicare etc.)', col:'#E74C3C', data:expHealth},
+  {label:'Military / Defense',     col:'#7B241C', data:expMilitary},
+  {label:'Net interest on debt',   col:'#F39C12', data:expInterest},
+  {label:'State & local spending', col:'#D98880', data:expStateOther},
+  {label:'Other federal spending', col:'#F1948A', data:expFedOther},
+];
+const DEBT_COL='#4466DD', GDP_COL='#16A085';
+
+const legendEl=document.getElementById('legendRow');
+[...INCOME_STACKS,...EXP_STACKS].forEach(s=>{
+  legendEl.innerHTML+=`<span class="li"><span class="ld" style="background:${s.col}"></span>${s.label}</span>`;
+});
+legendEl.innerHTML+=`<span class="li"><span class="ld" style="background:${DEBT_COL}"></span>National Debt (right axis)</span>`;
+legendEl.innerHTML+=`<span class="li"><span class="ld" style="background:${GDP_COL}"></span>GDP (right axis)</span>`;
+
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+const W=720,H=460,PAD_L=76,PAD_R=86,PAD_T=20,PAD_B=38;
+const CH=H-PAD_T-PAD_B,CW=W-PAD_L-PAD_R;
+const BAR_W=96,GAP=18,TOTAL=BAR_W*4+GAP*3;
+const X1=PAD_L+(CW-TOTAL)/2,X2=X1+BAR_W+GAP,X3=X2+BAR_W+GAP,X4=X3+BAR_W+GAP;
+
+// Start at 1999 levels, never shrink
+let currentMaxLeft=3500, currentMaxRight=14000;
+let playing=true, speed=1, lastTs=null, currentIdx=0;
+
+function lerp(a,b,f){return a+(b-a)*f;}
+function ease(f){return f<0.5?2*f*f:1-Math.pow(-2*f+2,2)/2;}
+function fmtB(v){return v>=1000?'$'+(v/1000).toFixed(1)+'T':'$'+Math.round(v)+'B';}
+function getVal(arr,idx){
+  const i0=Math.floor(idx)%N,i1=Math.min(N-1,i0+1);
+  return lerp(arr[i0],arr[i1],ease(idx-Math.floor(idx)));
+}
+
+// Fine-grained nice ceiling — avoids coarse doubling jumps
+function niceCeil(v){
+  if(v<=0) return 1000;
+  const steps=[1,1.2,1.5,1.8,2,2.5,3,3.5,4,4.5,5,6,7,8,9,10];
+  const mag=Math.pow(10,Math.floor(Math.log10(v)));
+  for(const s of steps){const c=s*mag;if(c>=v)return c;}
+  return 10*mag;
+}
+
+function drawAxes(maxLeft,maxRight){
+  const ticks=6;
+  ctx.font='11px -apple-system,sans-serif';
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  for(let i=0;i<=ticks;i++){
+    const y=PAD_T+CH-(i/ticks)*CH;
+    ctx.beginPath();ctx.moveTo(PAD_L,y);ctx.lineTo(W-PAD_R,y);
+    ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.45)';
+    ctx.fillText(fmtB(maxLeft*i/ticks),PAD_L-6,y);
+  }
+  ctx.textAlign='left';
+  for(let i=0;i<=ticks;i++){
+    const y=PAD_T+CH-(i/ticks)*CH;
+    ctx.fillStyle='rgba(100,130,220,0.7)';
+    ctx.fillText(fmtB(maxRight*i/ticks),W-PAD_R+6,y);
+  }
+  ctx.save();ctx.translate(W-4,PAD_T+CH/2);ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center';ctx.font='10px sans-serif';
+  ctx.fillStyle='rgba(100,130,220,0.55)';ctx.fillText('Debt / GDP',0,0);ctx.restore();
+  ctx.beginPath();ctx.moveTo(PAD_L,PAD_T+CH);ctx.lineTo(W-PAD_R,PAD_T+CH);
+  ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;ctx.stroke();
+  const lblY=PAD_T+CH+10;
+  ctx.font='11px sans-serif';ctx.textBaseline='top';ctx.textAlign='center';
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.fillText('Total Income',X1+BAR_W/2,lblY);
+  ctx.fillText('Total Expenditure',X2+BAR_W/2,lblY);
+  ctx.fillStyle=DEBT_COL+'bb';ctx.fillText('National Debt',X3+BAR_W/2,lblY);
+  ctx.fillStyle=GDP_COL+'bb';ctx.fillText('GDP',X4+BAR_W/2,lblY);
+}
+
+function drawStackedBar(x,w,stacks,idx,maxLeft){
+  let y=PAD_T+CH;
+  const vals=stacks.map(s=>getVal(s.data,idx));
+  const total=vals.reduce((a,b)=>a+b,0);
+  stacks.forEach((s,i)=>{
+    const v=vals[i],barH=(v/maxLeft)*CH,barY=y-barH;
+    ctx.fillStyle=s.col;
+    ctx.beginPath();
+    if(i===stacks.length-1)ctx.roundRect(x,barY,w,barH,[4,4,0,0]);
+    else ctx.rect(x,barY,w,barH);
+    ctx.fill();
+    if(i<stacks.length-1){
+      ctx.beginPath();ctx.moveTo(x,barY);ctx.lineTo(x+w,barY);
+      ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.stroke();
+    }
+    if(barH>17){
+      ctx.font=`bold ${Math.min(11,Math.floor(barH*0.44))}px sans-serif`;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(255,255,255,0.85)';
+      ctx.fillText(fmtB(v),x+w/2,barY+barH/2);
+    }
+    y=barY;
+  });
+  const topY=PAD_T+CH-(total/maxLeft)*CH;
+  ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle='rgba(255,255,255,0.88)';ctx.fillText(fmtB(total),x+w/2,topY-5);
+  return total;
+}
+
+function drawSimpleBar(x,w,val,maxRight,col){
+  const barH=(val/maxRight)*CH,barY=PAD_T+CH-barH;
+  const grad=ctx.createLinearGradient(x,barY,x,PAD_T+CH);
+  grad.addColorStop(0,col+'ee');grad.addColorStop(1,col+'33');
+  ctx.fillStyle=grad;
+  ctx.beginPath();ctx.roundRect(x,barY,w,barH,[4,4,0,0]);ctx.fill();
+  ctx.strokeStyle=col+'cc';ctx.lineWidth=1.5;ctx.stroke();
+  if(barH>28){
+    ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fillText(fmtB(val),x+w/2,barY+barH/2);
+  }
+  ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle=col;ctx.fillText(fmtB(val),x+w/2,barY-5);
+}
+
+function draw(idx,dt){
+  ctx.clearRect(0,0,W,H);
+
+  const i0=Math.floor(idx)%N;
+  const frac=idx-Math.floor(idx);
+  const sf=ease(frac);
+  const year=Math.round(lerp(YEARS[i0],YEARS[Math.min(N-1,i0+1)],sf));
+  const cpiNow=lerp(CPI[i0],CPI[Math.min(N-1,i0+1)],sf);
+  const cpiFactor=cpiNow/CPI_BASE;
+
+  const incVals=INCOME_STACKS.map(s=>getVal(s.data,idx));
+  const expVals=EXP_STACKS.map(s=>getVal(s.data,idx));
+  const totalInc=incVals.reduce((a,b)=>a+b,0);
+  const totalExp=expVals.reduce((a,b)=>a+b,0);
+  const debtVal=getVal(natDebt,idx);
+  const gdpVal=getVal(GDP,idx);
+
+  // Axis target: just enough to show the bars with 12% headroom
+  // NO CPI multiplier on bars — axis tracks actual data, not inflation-adjusted data
+  const targetLeft=niceCeil(Math.max(totalInc,totalExp)*1.12);
+
+  // Smooth upward-only animation
+  const easeAxis=Math.min(1,(dt||0.016)*2.5);
+  currentMaxLeft=Math.max(currentMaxLeft,lerp(currentMaxLeft,targetLeft,easeAxis));
+  currentMaxRight=currentMaxLeft*4;
+
+  drawAxes(currentMaxLeft,currentMaxRight);
+  const inc=drawStackedBar(X1,BAR_W,INCOME_STACKS,idx,currentMaxLeft);
+  const exp=drawStackedBar(X2,BAR_W,EXP_STACKS,idx,currentMaxLeft);
+  drawSimpleBar(X3,BAR_W,debtVal,currentMaxRight,DEBT_COL);
+  drawSimpleBar(X4,BAR_W,gdpVal,currentMaxRight,GDP_COL);
+
+  // Income vs expenditure gap
+  const incY=PAD_T+CH-(inc/currentMaxLeft)*CH;
+  const expY=PAD_T+CH-(exp/currentMaxLeft)*CH;
+  const gapX=X1+BAR_W+GAP/2;
+  const gap=inc-exp;
+  const gapCol=gap>=0?'#2ECC71':'#E74C3C';
+  ctx.beginPath();ctx.moveTo(gapX,Math.min(incY,expY));ctx.lineTo(gapX,Math.max(incY,expY));
+  ctx.strokeStyle=gapCol;ctx.lineWidth=2;ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);
+  if(Math.abs(incY-expY)>22){
+    ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=gapCol;
+    ctx.fillText((gap>=0?'+':'')+fmtB(Math.abs(gap)),gapX,(incY+expY)/2);
+  }
+
+  // Debt vs GDP connector
+  const debtY=PAD_T+CH-(debtVal/currentMaxRight)*CH;
+  const gdpY2=PAD_T+CH-(gdpVal/currentMaxRight)*CH;
+  const cmpX=X3+BAR_W+GAP/2;
+  const pct=Math.round(debtVal/gdpVal*100);
+  ctx.beginPath();ctx.moveTo(cmpX,debtY);ctx.lineTo(cmpX,gdpY2);
+  ctx.strokeStyle='rgba(180,180,180,0.35)';ctx.lineWidth=1.5;
+  ctx.setLineDash([3,3]);ctx.stroke();ctx.setLineDash([]);
+  if(Math.abs(debtY-gdpY2)>20){
+    ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(190,190,190,0.7)';
+    ctx.fillText(pct+'% of GDP',cmpX,(debtY+gdpY2)/2);
+  }
+
+  // Year label — size grows with CPI (visual inflation signal)
+  const yearFontSize=Math.round(96*cpiFactor);
+  document.getElementById('yearDisplay').style.fontSize=yearFontSize+'px';
+  document.getElementById('yearDisplay').textContent=year;
+  document.getElementById('estNote').textContent=year>=EST?'* Estimate / Projection':'';
+  document.getElementById('cpiBadge').textContent=`CPI ${cpiNow.toFixed(1)}  ×${cpiFactor.toFixed(2)}`;
+  document.getElementById('slYear').value=Math.round(idx);
+}
+
+function loop(ts){
+  if(lastTs===null)lastTs=ts;
+  const dt=(ts-lastTs)/1000;lastTs=ts;
+  if(playing){
+    currentIdx+=dt*speed;
+    if(currentIdx>=N-1){
+      currentIdx=N-1;playing=false;
+      document.getElementById('btnPlay').innerHTML='&#9654; Play';
+    }
+  }
+  draw(currentIdx,dt);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+document.getElementById('btnPlay').addEventListener('click',function(){
+  if(currentIdx>=N-1){currentIdx=0;currentMaxLeft=3500;currentMaxRight=14000;}
+  playing=!playing;
+  this.innerHTML=playing?'&#9646;&#9646; Pause':'&#9654; Play';
+  if(playing)lastTs=null;
+});
+document.getElementById('slYear').addEventListener('input',e=>{
+  currentIdx=parseInt(e.target.value);lastTs=null;if(!playing)draw(currentIdx,0.1);
+});
+document.getElementById('slSpeed').addEventListener('input',e=>{speed=parseFloat(e.target.value);});
+</script>
+</body>
+</html>
